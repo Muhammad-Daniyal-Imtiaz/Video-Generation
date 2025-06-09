@@ -1,0 +1,46 @@
+!pip install diffusers transformers accelerate torch
+
+import torch
+from modelscope import DiffusionPipeline, DPMSolverMultistepScheduler
+from diffusers.utils import export_to_video
+import numpy as np
+
+# load pipeline
+pipe = DiffusionPipeline.from_pretrained("AI-ModelScope/text-to-video-ms-1.7b", torch_dtype=torch.float16, variant="fp16")
+pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+
+# optimize for GPU memory
+pipe.enable_model_cpu_offload()
+pipe.enable_vae_slicing()
+
+# generate
+prompt = "Spiderman is surfing. Darth Vader is also surfing and following Spiderman"
+output = pipe(prompt, num_inference_steps=5, num_frames=8)
+video_frames = output.frames
+
+# Debug: Check the frames shape and type
+print(f"Frames type: {type(video_frames)}")
+if isinstance(video_frames, list):
+    print(f"Number of frames: {len(video_frames)}")
+    print(f"First frame shape: {video_frames[0].shape}")
+
+# Convert frames to numpy array if needed
+if isinstance(video_frames, list):
+    video_frames = np.stack(video_frames)
+
+print(f"Final frames shape: {video_frames.shape}")
+
+# Ensure frames have 3 channels (RGB)
+if video_frames.shape[-1] not in [3, 4]:
+    if len(video_frames.shape) == 4 and video_frames.shape[1] in [3, 4]:
+        # If channels are in the second dimension (C, H, W)
+        video_frames = video_frames.permute(0, 2, 3, 1)
+    else:
+        raise ValueError(f"Unexpected frame shape: {video_frames.shape}")
+
+# convert to video
+try:
+    video_path = export_to_video(video_frames)
+    print(f"Video saved to: {video_path}")
+except Exception as e:
+    print(f"Error exporting video: {e}")
